@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Mesh with Capture</title>
+
+  <!-- Mediapipe CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+  <style>
+    video, canvas {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 8px;
+    }
+    #captureBtn {
+      padding: 10px 20px;
+      margin-top: 10px;
+      background: #2d89ef;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 2;
+    }
+    .video-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <h2>Face Capture with 3D Mesh</h2>
+  <div class="video-wrapper">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+  <br>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <button id="captureBtn">Capture & Download</button>
+  <p id="status">Initializing 3D Mesh...</p>
+
+  <script type="module">
+    window.addEventListener('DOMContentLoaded', () => {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const overlay = document.getElementById('overlay');
+      const captureBtn = document.getElementById('captureBtn');
+      const statusText = document.getElementById('status');
+      const overlayCtx = overlay.getContext('2d');
+
+      const faceMesh = new FaceMesh({
+        locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      faceMesh.onResults(results => {
+        overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          statusText.innerText = '✅ Face detected!';
+          statusText.style.color = 'green';
+          for (const landmarks of results.multiFaceLandmarks) {
+            drawConnectors(overlayCtx, landmarks, FACEMESH_TESSELATION, { color: '#00FF00', lineWidth: 1 });
+            drawConnectors(overlayCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '##30FF30' });
+            drawConnectors(overlayCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
+          }
+        } else {
+          statusText.innerText = '❌ No face detected.';
+          statusText.style.color = 'red';
+        }
+      });
+
+      async function initCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          video.srcObject = stream;
+          video.onloadedmetadata = () => {
+            video.play();
+            const camera = new Camera(video, {
+              onFrame: async () => {
+                overlay.width = video.videoWidth;
+                overlay.height = video.videoHeight;
+                await faceMesh.send({ image: video });
+              },
+              width: 400,
+              height: 300
+            });
+            camera.start();
+          };
+        } catch (err) {
+          statusText.innerText = '🚫 Camera access denied or unavailable.';
+          statusText.style.color = 'red';
+          console.error(err);
+        }
+      }
+
+      initCamera();
+
+      captureBtn.addEventListener('click', () => {
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const link = document.createElement('a');
+        link.download = `face_${Date.now()}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    });
+  </script>
+</body>
+</html>
