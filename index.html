@@ -54,79 +54,100 @@
 
   <script type="module">
     window.addEventListener('DOMContentLoaded', () => {
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const overlay = document.getElementById('overlay');
-      const captureBtn = document.getElementById('captureBtn');
-      const statusText = document.getElementById('status');
-      const overlayCtx = overlay.getContext('2d');
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const overlay = document.getElementById('overlay');
+  const captureBtn = document.getElementById('captureBtn');
+  const statusText = document.getElementById('status');
+  const overlayCtx = overlay.getContext('2d');
 
-      const faceMesh = new FaceMesh({
-        locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-      });
+  let lastLandmarks = null;  // store latest landmarks here
 
-      faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
+  const faceMesh = new FaceMesh({
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
 
-      faceMesh.onResults(results => {
-        overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
 
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          statusText.innerText = '✅ Face detected!';
-          statusText.style.color = 'green';
-          for (const landmarks of results.multiFaceLandmarks) {
-            drawConnectors(overlayCtx, landmarks, FACEMESH_TESSELATION, { color: '#00FF00', lineWidth: 1 });
-            drawConnectors(overlayCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '##30FF30' });
-            drawConnectors(overlayCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
-          }
-        } else {
-          statusText.innerText = '❌ No face detected.';
-          statusText.style.color = 'red';
-        }
-      });
+  faceMesh.onResults(results => {
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-      async function initCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          video.srcObject = stream;
-          video.onloadedmetadata = () => {
-            video.play();
-            const camera = new Camera(video, {
-              onFrame: async () => {
-                overlay.width = video.videoWidth;
-                overlay.height = video.videoHeight;
-                await faceMesh.send({ image: video });
-              },
-              width: 400,
-              height: 300
-            });
-            camera.start();
-          };
-        } catch (err) {
-          statusText.innerText = '🚫 Camera access denied or unavailable.';
-          statusText.style.color = 'red';
-          console.error(err);
-        }
-      }
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      lastLandmarks = results.multiFaceLandmarks[0];  // save the first face landmarks
+      statusText.innerText = '✅ Face detected!';
+      statusText.style.color = 'green';
 
-      initCamera();
+      drawConnectors(overlayCtx, lastLandmarks, FACEMESH_TESSELATION, { color: '#00FF00', lineWidth: 1 });
+      drawConnectors(overlayCtx, lastLandmarks, FACEMESH_RIGHT_EYE, { color: '#30FF30' });
+      drawConnectors(overlayCtx, lastLandmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
+    } else {
+      lastLandmarks = null;  // reset if no face detected
+      statusText.innerText = '❌ No face detected.';
+      statusText.style.color = 'red';
+    }
+  });
 
-      captureBtn.addEventListener('click', () => {
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  async function initCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        const camera = new Camera(video, {
+          onFrame: async () => {
+            overlay.width = video.videoWidth;
+            overlay.height = video.videoHeight;
+            await faceMesh.send({ image: video });
+          },
+          width: 400,
+          height: 300
+        });
+        camera.start();
+      };
+    } catch (err) {
+      statusText.innerText = '🚫 Camera access denied or unavailable.';
+      statusText.style.color = 'red';
+      console.error(err);
+    }
+  }
 
-        const link = document.createElement('a');
-        link.download = `face_${Date.now()}.png`;
-        link.href = canvas.toDataURL();
-        link.click();
-      });
-    });
-  </script>
+  initCamera();
+
+  captureBtn.addEventListener('click', () => {
+    if (!lastLandmarks) {
+      alert('No face landmarks detected yet!');
+      return;
+    }
+
+    // Capture image from video
+    const context = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Trigger image download
+    const imgLink = document.createElement('a');
+    imgLink.download = `face_${Date.now()}.png`;
+    imgLink.href = canvas.toDataURL();
+    imgLink.click();
+
+    // Prepare landmarks JSON and download
+    const landmarksJSON = JSON.stringify(lastLandmarks);
+    const blob = new Blob([landmarksJSON], { type: 'application/json' });
+    const jsonUrl = URL.createObjectURL(blob);
+    const jsonLink = document.createElement('a');
+    jsonLink.href = jsonUrl;
+    jsonLink.download = `face_landmarks_${Date.now()}.json`;
+    jsonLink.click();
+    URL.revokeObjectURL(jsonUrl);
+  });
+});
+
+</script>
 </body>
 </html>
